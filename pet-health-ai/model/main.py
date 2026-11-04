@@ -1,11 +1,16 @@
 import os
+import sys
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 import io
 from pathlib import Path
 import torch
 import torch.nn as nn
-from PIL import Image
+from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 from torchvision import transforms, models
 from transformers import CLIPProcessor, CLIPModel
 from fastapi import FastAPI, File, Form, Query, UploadFile, HTTPException
@@ -83,35 +88,134 @@ clip_model = CLIPModel.from_pretrained(clip_model_name).to(device)
 clip_processor = CLIPProcessor.from_pretrained(clip_model_name)
 clip_model.eval()
 
+NORM_MEAN = [0.485, 0.456, 0.406]
+NORM_STD = [0.229, 0.224, 0.225]
+
 inference_transforms = transforms.Compose([
     transforms.Resize((224, 224)),
     transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+    transforms.Normalize(mean=NORM_MEAN, std=NORM_STD),
+])
+
+# Transforms สำหรับการเรียนรู้ (Data Augmentation รองรับมุมแสง ภาพมืด ภาพเบลอ มุมเอียง)
+learn_augmentation_transforms = transforms.Compose([
+    transforms.RandomResizedCrop((224, 224), scale=(0.65, 1.0)),
+    transforms.RandomHorizontalFlip(p=0.5),
+    transforms.RandomVerticalFlip(p=0.2),
+    transforms.RandomRotation(degrees=30),
+    transforms.ColorJitter(brightness=0.45, contrast=0.45, saturation=0.35, hue=0.08),
+    transforms.RandomApply([transforms.GaussianBlur(kernel_size=3, sigma=(0.1, 2.0))], p=0.4),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=NORM_MEAN, std=NORM_STD),
 ])
 
 
-def check_is_dog_or_lesion(pil_img: Image.Image) -> bool:
-    candidate_labels = [
-        "a photo of a dog",
-        "a close-up photo of dog skin lesion, rash, fur, or wound",
-        "a photo of a cat, kitten, or other pet",
-        "a photo of a bird, human, or other animal",
-        "a photo of an everyday object, landscape, or food",
+def enhance_image_for_lighting_and_blur(pil_img: Image.Image) -> Image.Image:
+    """
+    ปรับปรุงคุณภาพภาพอัตโนมัติกรณีแสงมืด แสงจ้า คอนทราสต์ต่ำ หรือถ่ายไม่ชัด
+    """
+    img = pil_img.convert("RGB")
+    gray = img.convert("L")
+    pixels = list(gray.getdata())
+    avg_brightness = sum(pixels) / max(len(pixels), 1)
+
+    # ปรับ Autocontrast เพื่อดึงรายละเอียดของรอยโรคและเส้นขนที่จมอยู่ในเงามืดหรือแสงสะท้อน
+    img = ImageOps.autocontrast(img, cutoff=1)
+
+    # ชดเชยความสว่างหากภาพมืดเกินไป หรือลดแสงหากภาพสว่างจ้าเกินไป
+    if avg_brightness < 90:
+        factor = min(1.6, max(1.15, 115.0 / max(avg_brightness, 1.0)))
+        img = ImageEnhance.Brightness(img).enhance(factor)
+        img = ImageEnhance.Contrast(img).enhance(1.25)
+    elif avg_brightness > 200:
+        img = ImageEnhance.Brightness(img).enhance(0.82)
+        img = ImageEnhance.Contrast(img).enhance(1.2)
+
+    # เพิ่มความคมชัดให้ภาพที่เบลอหรือโฟกัสไม่ชัด
+    img = ImageEnhance.Sharpness(img).enhance(1.5)
+    return img
+
+
+def build_tta_batch(pil_img: Image.Image) -> torch.Tensor:
+    """
+    สร้างชุดภาพ Test-Time Augmentation (TTA) หลายมุมแสง/ความคมชัด/ระยะซูม
+    เพื่อให้โมเดลตอบได้แม่นยำแม้ภาพถ่ายจะมืด เบลอ มีขอบดำ หรือมุมแสงเพี้ยน
+    """
+    w, h = pil_img.size
+    enhanced = enhance_image_for_lighting_and_blur(pil_img)
+
+    # ตัดขอบภาพออก 12% สำหรับกรณีถ่ายติดขอบจอมือถือหรือเงาขอบภาพ
+    crop_box = (int(w * 0.12), int(h * 0.12), int(w * 0.88), int(h * 0.88))
+    center_cropped = enhanced.crop(crop_box) if (w > 64 and h > 64) else enhanced
+
+    # ภาพเพิ่มความคมชัดสูงสำหรับกรณีถ่ายเบลอมาก
+    sharpened = enhanced.filter(ImageFilter.SHARPEN)
+
+    # ภาพจำลองแสงสว่างขึ้นและคอนทราสต์จัดขึ้น
+    brighter = ImageEnhance.Contrast(ImageEnhance.Brightness(enhanced).enhance(1.2)).enhance(1.2)
+
+    # ภาพกลับด้านแนวนอน
+    flipped = ImageOps.mirror(enhanced)
+
+    views = [
+        pil_img,          # 1. ภาพต้นฉบับ
+        enhanced,         # 2. ภาพปรับสมดุลแสงและเงาอัตโนมัติ
+        center_cropped,   # 3. ภาพซูมตัดขอบดำ/เงารอบนอก
+        sharpened,        # 4. ภาพแก้เบลอ/เพิ่มความคมชัด
+        brighter,         # 5. ภาพดึงรายละเอียดในที่มืด
+        flipped,          # 6. ภาพกลับด้านเพื่อลดอคติของมุมแสง
     ]
-    inputs = clip_processor(text=candidate_labels, images=pil_img, return_tensors="pt", padding=True).to(device)
+    tensors = [inference_transforms(v) for v in views]
+    return torch.stack(tensors, dim=0).to(device)
+
+
+def check_is_dog_or_lesion(pil_img: Image.Image) -> bool:
+    """
+    คัดกรองภาพด้วย CLIP โดยรองรับภาพสุนัข ภาพซูมผิวหนัง/เส้นขนระยะประชิด (Macro)
+    รวมถึงภาพที่ถ่ายในมุมมืด แสงสะท้อน หรือเบลอไม่ชัดเจน
+    """
+    enhanced_img = enhance_image_for_lighting_and_blur(pil_img)
+
+    candidate_labels = [
+        # กลุ่มที่ 1 (Indices 0-3): ภาพสุนัข รอยโรคผิวหนัง เส้นขน หรือภาพซูมผิวระยะใกล้แม้ไม่ชัด/แสงน้อย
+        "a photo of a dog, puppy, or canine",
+        "a close-up macro photo of animal skin, fur, hair, rash, scab, wound, or dermatitis",
+        "a blurry, dim, or low-light close-up texture of skin, hair, fur, or dermatology lesion",
+        "a veterinary dermatoscope or microscope image of skin and hair",
+        # กลุ่มที่ 2 (Indices 4-7): ภาพสัตว์อื่น (แมว นก) หรือสิ่งของ อาหาร วิว เอกสาร หน้าคน
+        "a photo of a cat or kitten",
+        "a photo of a bird, poultry, or wild animal",
+        "a photo of delicious food, meal, drink, car, building, or everyday object",
+        "a clear portrait photo of a human face or person standing",
+    ]
+
+    # ทดสอบทั้งภาพต้นฉบับและภาพที่ปรับแสงแล้ว (ใช้ค่าที่ดีที่สุด)
+    inputs = clip_processor(
+        text=candidate_labels,
+        images=[pil_img, enhanced_img],
+        return_tensors="pt",
+        padding=True,
+    ).to(device)
+
     with torch.no_grad():
         outputs = clip_model(**inputs)
-        probs = outputs.logits_per_image.softmax(dim=1)[0]
+        probs = outputs.logits_per_image.softmax(dim=1)
 
-    dog_and_lesion_prob = probs[0].item() + probs[1].item()
-    other_prob = probs[2:].sum().item()
-    return (dog_and_lesion_prob > 0.50) and (dog_and_lesion_prob > other_prob)
+    # คำนวณคะแนนฝั่งภาพสุนัข/ผิวหนัง/เส้นขน เทียบกับภาพแมว/นก/สิ่งของ/วิว/คน
+    pos_prob_orig = probs[0, :4].sum().item()
+    pos_prob_enh = probs[1, :4].sum().item()
+    best_pos_prob = max(pos_prob_orig, pos_prob_enh)
+
+    return best_pos_prob >= 0.45
 
 
-def predict_with_model(m: nn.Module, input_tensor: torch.Tensor):
+def predict_with_model(m: nn.Module, input_batch: torch.Tensor):
+    """
+    ทำนายผลด้วยชุดภาพ TTA (หลายสภาพแสง/ความชัด) แล้วเฉลี่ยความน่าจะเป็น
+    """
     with torch.no_grad():
-        outputs = m(input_tensor)
-        probabilities = torch.softmax(outputs, dim=1)[0]
+        outputs = m(input_batch)
+        probabilities = torch.softmax(outputs, dim=1).mean(dim=0)
     results = [
         {"label": IDX_TO_CLASS[i], "score": round(float(prob.item()), 4)}
         for i, prob in enumerate(probabilities)
@@ -131,22 +235,22 @@ async def predict_endpoint(
     except Exception:
         raise HTTPException(status_code=400, detail="ไม่สามารถอ่านไฟล์รูปภาพได้")
 
-    # ด่านที่ 1: CLIP Guardrail (รับเฉพาะสุนัขและรอยโรคผิวหนังสุนัขเท่านั้น)
+    # ด่านที่ 1: CLIP Guardrail (รองรับภาพซูมผิวหนัง ภาพมืด และภาพเบลอ)
     if not check_is_dog_or_lesion(pil_img):
         raise HTTPException(
             status_code=400,
             detail="ตรวจพบว่าภาพนี้ไม่ใช่สุนัข หรือไม่ใช่รอยโรคผิวหนังของสุนัข กรุณาอัปโหลดรูปใหม่",
         )
 
-    # ด่านที่ 2: ทำนายด้วยทั้ง 2 โมเดลเพื่อเทียบผลกัน
-    input_tensor = inference_transforms(pil_img).unsqueeze(0).to(device)
+    # ด่านที่ 2: ทำนายด้วย TTA Batch (6 มุมมอง/สภาพแสง) เพื่อให้ตอบได้แม่นยำแม้ภาพไม่ชัด
+    tta_batch = build_tta_batch(pil_img)
 
-    res_mobilenet = predict_with_model(model_mobilenet, input_tensor) if model_mobilenet else None
-    res_efficientnet = predict_with_model(model_efficientnet, input_tensor) if model_efficientnet else None
+    res_mobilenet = predict_with_model(model_mobilenet, tta_batch) if model_mobilenet else None
+    res_efficientnet = predict_with_model(model_efficientnet, tta_batch) if model_efficientnet else None
 
     # แสดงตารางเปรียบเทียบใน Terminal ทุกครั้งที่มีการอัปโหลดรูป
     print("\n" + "=" * 58)
-    print(f"📊 เปรียบเทียบผลทำนาย 2 โมเดล (ไฟล์: {image.filename})")
+    print(f"📊 เปรียบเทียบผลทำนาย 2 โมเดล [TTA Multi-Light/Blur] (ไฟล์: {image.filename})")
     if res_mobilenet:
         top_m = res_mobilenet[0]
         print(f"  🔹 MobileNetV3-Small : {top_m['label']} ({top_m['score']*100:.2f}%)")
@@ -195,21 +299,27 @@ async def learn_from_feedback(
     except Exception:
         raise HTTPException(status_code=400, detail="ไม่สามารถอ่านไฟล์รูปภาพได้")
 
-    if not check_is_dog_or_lesion(pil_img):
-        raise HTTPException(
-            status_code=400,
-            detail="ตรวจพบว่าภาพนี้ไม่ใช่สุนัข หรือไม่ใช่รอยโรคผิวหนังของสุนัข กรุณาอัปโหลดรูปใหม่",
-        )
-
     save_dir = MODEL_DIR / "learned_data" / true_label
     save_dir.mkdir(parents=True, exist_ok=True)
-    save_path = save_dir / f"{len(list(save_dir.glob('*.jpg'))) + 1}_{image.filename}"
+    safe_name = Path(image.filename or "image.jpg").name
+    save_path = save_dir / f"{len(list(save_dir.glob('*'))) + 1}_{safe_name}"
     pil_img.save(save_path)
 
     target_idx = CLASSES_LIST.index(true_label)
-    target_tensor = torch.tensor([target_idx], dtype=torch.long, device=device)
-    input_tensor = inference_transforms(pil_img).unsqueeze(0).to(device)
     criterion = nn.CrossEntropyLoss()
+
+    # เตรียมภาพทั้งต้นฉบับและภาพปรับแสง แล้วสุ่ม Augmentation 8 รูปแบบ (มุมแสง/เบลอ/หมุน/ซูม)
+    enhanced_img = enhance_image_for_lighting_and_blur(pil_img)
+    aug_tensors = [
+        inference_transforms(pil_img),
+        inference_transforms(enhanced_img),
+    ]
+    for _ in range(6):
+        aug_tensors.append(learn_augmentation_transforms(pil_img))
+        aug_tensors.append(learn_augmentation_transforms(enhanced_img))
+
+    train_batch = torch.stack(aug_tensors, dim=0).to(device)
+    target_batch = torch.full((train_batch.size(0),), target_idx, dtype=torch.long, device=device)
 
     losses = {}
     for name, m, pth in [
@@ -221,22 +331,31 @@ async def learn_from_feedback(
         m.train()
         for param in m.parameters():
             param.requires_grad = False
+        # เปิดให้เรียนรู้ทั้งส่วน Classifier และ Feature สุดท้ายเพื่อจับลักษณะแสง/พื้นผิวที่ไม่ชัด
+        if hasattr(m, "features") and len(m.features) > 0:
+            for param in m.features[-1].parameters():
+                param.requires_grad = True
         for param in m.classifier.parameters():
             param.requires_grad = True
 
-        optimizer = torch.optim.AdamW(m.classifier.parameters(), lr=1e-4, weight_decay=1e-2)
-        optimizer.zero_grad()
-        outputs = m(input_tensor)
-        loss = criterion(outputs, target_tensor)
-        loss.backward()
-        optimizer.step()
-        m.eval()
+        trainable_params = [p for p in m.parameters() if p.requires_grad]
+        optimizer = torch.optim.AdamW(trainable_params, lr=2e-4, weight_decay=1e-2)
 
+        step_loss = 0.0
+        for _ in range(3):
+            optimizer.zero_grad()
+            outputs = m(train_batch)
+            loss = criterion(outputs, target_batch)
+            loss.backward()
+            optimizer.step()
+            step_loss = float(loss.item())
+
+        m.eval()
         torch.save(m.state_dict(), pth)
-        losses[name] = round(float(loss.item()), 4)
+        losses[name] = round(step_loss, 4)
 
     return {
-        "message": f"สอนทั้ง 2 โมเดลสำหรับโรค '{true_label}' สำเร็จ",
+        "message": f"สอนทั้ง 2 โมเดลสำหรับโรค '{true_label}' สำเร็จ (เรียนรู้มุมแสงและภาพเบลอ 14 รูปแบบ)",
         "losses": losses,
         "saved_image": str(save_path),
     }
