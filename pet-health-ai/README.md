@@ -1,5 +1,20 @@
 # React + Vite
 
+## Login / Sign-up prototype
+
+เปิด `/#/login` หรือ `/#/signup` หรือกดไอคอนบัญชีผู้ใช้ด้านขวาของเมนู
+
+- ใช้โหมดจำลองเสมอ เนื่องจากยังไม่มี API สำหรับบัญชีผู้ใช้ ไม่เกี่ยวกับ `VITE_API_URL` ของโมเดลวิเคราะห์ภาพ
+- Login รับอีเมลที่มีรูปแบบถูกต้องและรหัสผ่านที่ไม่ว่าง ส่วน Sign-up ต้องมีชื่อ รหัสผ่านอย่างน้อย 8 ตัวอักษร และยืนยันรหัสผ่านตรงกัน
+- ไม่ได้สร้างบัญชีจริง และไม่ตรวจรหัสผ่านเทียบฐานข้อมูล ไม่ส่งหรือเก็บรหัสผ่าน
+- เก็บเฉพาะชื่อ อีเมล และสถานะ `mock` ใน `sessionStorage` หากเลือกจดจำฉันไว้จะใช้ `localStorage` ออกจากระบบได้ที่ไอคอนบัญชีผู้ใช้
+- ลืมรหัสผ่านเป็นขั้นตอนจำลอง ไม่มีการส่งอีเมลจริง
+- ก่อนเปิดใช้บัญชีจริง ต้องแทนที่ mock session ด้วย API และการจัดการ session ที่ backend
+
+## PostgreSQL database design
+
+See [แบบฐานข้อมูล PostgreSQL (ภาษาไทย)](database/README.th.md) for the table design, ER diagram, integration plan, and setup commands. The initial schema is in `database/001_initial_schema.sql`, with the six model classes in `database/002_seed_classes.sql`. These files do not connect the running API to a database yet.
+
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
 Currently, two official plugins are available:

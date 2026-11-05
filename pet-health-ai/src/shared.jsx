@@ -1,5 +1,6 @@
-import { useState, useRef, useMemo } from "react";
-import { NavLink, Link } from "react-router-dom";
+import { useState, useRef, useMemo, useEffect } from "react";
+import { readDemoSession, endDemoSession } from "./auth-session.js";
+import { NavLink, Link, useNavigate } from "react-router-dom";
 import {
   PawPrint, ImagePlus, ScanSearch, ClipboardList, HeartPulse, Search,
   MapPin, Phone, Clock, Star, X, ChevronRight, AlertCircle, UploadCloud,
@@ -75,12 +76,27 @@ const PageHead = ({ icon: Icon, title, sub }) => (
 );
 
 function Header() {
+  const navigate = useNavigate();
+  function logout() {
+    endDemoSession();
+    navigate('/login', { replace: true });
+    window.scrollTo(0, 0);
+  }
+  const [user, setUser] = useState(readDemoSession);
+  const [accountOpen, setAccountOpen] = useState(false);
+  useEffect(() => {
+    const update = event => { setUser(event.detail); setAccountOpen(false); };
+    const sync = () => setUser(readDemoSession());
+    window.addEventListener('pet-health-session', update);
+    window.addEventListener('storage', sync);
+    return () => { window.removeEventListener('pet-health-session', update); window.removeEventListener('storage', sync); };
+  }, []);
   const items = [["/", "หน้าหลัก"], ["/check", "ตรวจสุขภาพ"], ["/history", "ประวัติการตรวจ"], ["/clinics", "คลินิกใกล้ฉัน"], ["/about", "เกี่ยวกับระบบ"]];
   return (
     <header className="top">
       <Link to="/" className="brand"><PawPrint size={22} />Pet Health AI</Link>
       <nav>{items.map(([to, t]) => <NavLink key={to} to={to} end={to === "/"}>{t}</NavLink>)}</nav>
-      <span className="account" aria-label="บัญชีผู้ใช้"><CircleUserRound size={20} /></span>
+      <div className="account-wrap">{user ? <><button className="account" aria-label="บัญชีผู้ใช้" aria-expanded={accountOpen} onClick={() => setAccountOpen(!accountOpen)}><CircleUserRound size={20} /><span className="account-indicator" /></button>{accountOpen && <div className="account-panel"><strong>{user.name}</strong><small>{user.email}</small><small>บัญชีทดลอง · Mockup</small><Link to="/check" onClick={() => setAccountOpen(false)}>ตรวจสุขภาพน้องหมา</Link><button onClick={logout}>ออกจากระบบ</button></div>}</> : <Link to="/login" className="account-login">Login</Link>}</div>
     </header>
   );
 }
