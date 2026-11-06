@@ -1,20 +1,16 @@
+import { DEFAULT_PETS } from "./pet-store.js";
 import { useState, useRef, useMemo, useEffect } from "react";
 import { readDemoSession, endDemoSession } from "./auth-session.js";
 import { NavLink, Link, useNavigate } from "react-router-dom";
 import {
   PawPrint, ImagePlus, ScanSearch, ClipboardList, HeartPulse, Search,
   MapPin, Phone, Clock, Star, X, ChevronRight, AlertCircle, UploadCloud,
-  Cpu, Database, Server, Layout, ChevronLeft, CircleUserRound, Camera,
+  Cpu, Database, Server, Layout, ChevronLeft, CircleUserRound, Camera, Palette, Bone, Settings, LogOut,
 } from "lucide-react";
 import "./App.css";
 
 /* ---------- ข้อมูลตัวอย่าง (แทนที่ด้วยข้อมูลจาก API ภายหลัง) ---------- */
-const PETS = [
-  { id: 1, name: "Milo", breed: "Shih Tzu", age: 4, sex: "ผู้", img: "/dogs/milo.jpg" },
-  { id: 2, name: "Buddy", breed: "Golden Retriever", age: 3, sex: "ผู้", img: "/dogs/buddy.jpg" },
-  { id: 3, name: "Luna", breed: "Siberian Husky", age: 2, sex: "เมีย", img: "/dogs/luna.jpg" },
-  { id: 4, name: "Choco", breed: "Corgi", age: 1, sex: "ผู้", img: "/dogs/choco.jpg" },
-];
+const PETS = DEFAULT_PETS;
 const HISTORY = [
   { id: 1, pet: 1, date: "2025-09-20T14:32", disease: "Skin Infection", risk: "mid" },
   { id: 2, pet: 2, date: "2025-09-15T10:21", disease: "Ear Infection", risk: "low" },
@@ -75,7 +71,7 @@ const PageHead = ({ icon: Icon, title, sub }) => (
   <div className="page-head"><span className="badge"><Icon size={22} /></span><div><h1>{title}</h1><p>{sub}</p></div></div>
 );
 
-function Header() {
+function Header({ theme = 1, onCycleTheme }) {
   const navigate = useNavigate();
   function logout() {
     endDemoSession();
@@ -91,12 +87,13 @@ function Header() {
     window.addEventListener('storage', sync);
     return () => { window.removeEventListener('pet-health-session', update); window.removeEventListener('storage', sync); };
   }, []);
-  const items = [["/", "หน้าหลัก"], ["/check", "ตรวจสุขภาพ"], ["/history", "ประวัติการตรวจ"], ["/clinics", "คลินิกใกล้ฉัน"], ["/about", "เกี่ยวกับระบบ"]];
+  const items = [["/check", "ตรวจสุขภาพ"], ["/history", "ประวัติการตรวจ"], ["/clinics", "คลินิกใกล้ฉัน"], ["/about", "เกี่ยวกับระบบ"]];
   return (
     <header className="top">
-      <Link to="/" className="brand"><PawPrint size={22} />Pet Health AI</Link>
+      <Link to="/check" className="brand"><span className="brand-wordmark">Doo Pet</span><span className="brand-partner">× Machine Learning</span><Bone className="brand-bone" size={23} aria-hidden="true" /></Link>
       <nav>{items.map(([to, t]) => <NavLink key={to} to={to} end={to === "/"}>{t}</NavLink>)}</nav>
-      <div className="account-wrap">{user ? <><button className="account" aria-label="บัญชีผู้ใช้" aria-expanded={accountOpen} onClick={() => setAccountOpen(!accountOpen)}><CircleUserRound size={20} /><span className="account-indicator" /></button>{accountOpen && <div className="account-panel"><strong>{user.name}</strong><small>{user.email}</small><small>บัญชีทดลอง · Mockup</small><Link to="/check" onClick={() => setAccountOpen(false)}>ตรวจสุขภาพน้องหมา</Link><button onClick={logout}>ออกจากระบบ</button></div>}</> : <Link to="/login" className="account-login">Login</Link>}</div>
+      <button type="button" className="theme-cycle" onClick={onCycleTheme} aria-label={`ชุดสีปัจจุบัน: ธีม ${theme} กดเปลี่ยนเป็นธีม ${theme % 5 + 1}`} title={["", "มอคค่า–งาช้าง", "ฟ้า–น้ำเงิน", "เขียวเสจ–ครีม", "ม่วงลาเวนเดอร์", "ชมพูกุหลาบ"][theme]}><Palette size={17} /><span aria-live="polite">ธีม {theme}</span></button>
+      <div className="account-wrap">{user ? <><button className="account" aria-label="บัญชีผู้ใช้" aria-expanded={accountOpen} onClick={() => setAccountOpen(!accountOpen)}><img className="account-avatar" src={user.avatar} alt="" /><span className="account-indicator" /></button>{accountOpen && <div className="account-panel"><div className="account-panel-profile"><img src={user.avatar} alt="" /><div><strong>{user.name}</strong><small>{user.email}</small></div></div><span className="account-demo-tag">บัญชีทดลอง · Mockup</span><div className="account-panel-actions"><Link to="/check" onClick={() => setAccountOpen(false)}><span className="account-action-icon"><HeartPulse size={18} /></span><span>ตรวจสุขภาพน้องหมา</span><ChevronRight size={16} /></Link><Link to="/settings" onClick={() => setAccountOpen(false)}><span className="account-action-icon"><Settings size={18} /></span><span>ตั้งค่าบัญชี</span><ChevronRight size={16} /></Link></div><button type="button" className="account-logout" onClick={logout}><LogOut size={18} /><span>ออกจากระบบ</span></button></div>}</> : <Link to="/login" className="account-login">Login</Link>}</div>
     </header>
   );
 }

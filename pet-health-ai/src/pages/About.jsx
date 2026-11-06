@@ -8,7 +8,7 @@ export default function About() {
   const flow = [[ImagePlus, "อัปโหลดรูปภาพ"], [ScanSearch, "ประมวลผลภาพ"], [Cpu, "Machine Learning"], [ClipboardList, "ผลการตรวจ"], [HeartPulse, "คำแนะนำ"]];
   return (
     <>
-      <PageHead icon={PawPrint} title="เกี่ยวกับระบบ" sub="เรียนรู้เพิ่มเติมเกี่ยวกับโครงการ Pet Health AI" />
+      <PageHead icon={PawPrint} title="เกี่ยวกับระบบ" sub="เรียนรู้เพิ่มเติมเกี่ยวกับโครงการ Doo Pet × Machine Learning" />
       <section className="about-panel">
         <div className="about-main">
           <div className="about-photo">
@@ -17,7 +17,7 @@ export default function About() {
           <div className="about-detail">
             <section>
               <h2>รายละเอียดโครงการ</h2>
-              <p>Pet Health AI เป็นระบบช่วยตรวจสุขภาพสุนัขเบื้องต้นจากรูปภาพ โดยใช้เทคโนโลยี Machine Learning เพื่อช่วยให้เจ้าของสัตว์เลี้ยงสามารถประเมินอาการเบื้องต้นก่อนตัดสินใจพาไปพบสัตวแพทย์</p>
+              <p>Doo Pet × Machine Learning เป็นระบบช่วยตรวจสุขภาพสุนัขเบื้องต้นจากรูปภาพ โดยใช้เทคโนโลยี Machine Learning เพื่อช่วยให้เจ้าของสัตว์เลี้ยงสามารถประเมินอาการเบื้องต้นก่อนตัดสินใจพาไปพบสัตวแพทย์</p>
             </section>
             <section className="about-process">
               <h2>วิธีการทำงานของระบบ</h2>

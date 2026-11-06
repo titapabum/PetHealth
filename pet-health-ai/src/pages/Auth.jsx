@@ -1,19 +1,16 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
+  Bone,
   ArrowLeft,
   ArrowRight,
-  CheckCircle2,
   Eye,
   EyeOff,
-  Heart,
   HeartPulse,
   LoaderCircle,
   LockKeyhole,
   Mail,
   PawPrint,
-  ScanLine,
-  ShieldCheck,
   Sparkles,
   UserRound,
 } from "lucide-react";
@@ -93,59 +90,21 @@ export default function Auth({ mode = "login" }) {
       className={`auth-page ${signup ? "auth-signup" : ""}`}
       aria-label={signup ? "สมัครสมาชิก" : "เข้าสู่ระบบ"}
     >
+      <div className="auth-paw-background" aria-hidden="true">
+        {Array.from({ length: 14 }, (_, index) => <PawPrint key={index} className="auth-drifting-paw" style={{ '--paw-x': `${(index * 37 + 7) % 96}%`, '--paw-y': `${(index * 23 + 11) % 92}%`, '--paw-delay': `${-index * 1.3}s`, '--paw-duration': `${7 + index % 5}s`, '--paw-size': `${18 + index % 4 * 7}px`, '--paw-angle': `${index % 2 ? 22 : -24}deg` }} />)}
+      </div>
       <div className="auth-shell">
-        <aside className="auth-visual">
-          <Link to="/" className="auth-visual-brand">
-            <PawPrint size={24} />
-            <span>Pet Health AI</span>
+        <aside className="auth-visual auth-visual-image" aria-label="ภาพสุนัขต้อนรับ">
+          <Link to="/check" className="auth-left-logo" aria-label="Doo Pet x ML ไปหน้าตรวจสุขภาพ">
+            <img className="auth-left-logo-image" src="/dogs/doopet-xml-logo-Photoroom.png" alt="Doo Pet x ML" />
           </Link>
-          <div className="auth-visual-orbit orbit-a" />
-          <div className="auth-visual-orbit orbit-b" />
-          <div className="auth-visual-heading">
-            <span className="auth-eyebrow">
-              <span /> A LITTLE CARE. A HEALTHIER LIFE.
-            </span>
-            <h1>
-              เพราะทุกความสุข
-              <br />
-              ของเขา เริ่มที่<span>การดูแล</span>
-            </h1>
-            <p>
-              ให้ AI ช่วยดูแลสุขภาพผิวหนังของน้องหมา
-              <br />
-              เพื่อให้ทุกวันเป็นวันที่ดีของคุณและเพื่อนซี้
-            </p>
+          <div className="auth-mini-bones" aria-hidden="true">
+            {Array.from({ length: 8 }, (_, index) => <Bone key={index} className="auth-mini-bone" style={{ '--bone-x': `${[13, 77, 8, 82, 20, 68, 42, 88][index]}%`, '--bone-y': `${[15, 12, 39, 36, 64, 58, 7, 77][index]}%`, '--bone-angle': `${index % 2 ? 28 : -32}deg`, '--bone-delay': `${-index * .8}s` }} />)}
           </div>
-          <div className="auth-dog-glow" />
-          <img
-            className="auth-dog"
-            src="/dogs/Golden-Retriever-PNG-File-Download-Free.png"
-            alt="น้องหมาโกลเด้นรีทรีฟเวอร์ เพื่อนซี้ของคุณ"
-          />
-          <span className="auth-photo-paw">
-            <PawPrint size={34} />
-          </span>
-          <span className="auth-photo-heart">
-            <Heart size={24} />
-          </span>
-          <div className="auth-health-tag">
-            <span>
-              <HeartPulse size={22} />
-            </span>
-            <div>
-              <strong>ดูแลด้วยความรัก</strong>
-              <small>ให้ทุกการดูแล ใกล้กันยิ่งขึ้น</small>
-            </div>
-            <CheckCircle2 size={18} />
+          <div className="auth-panel-paws" aria-hidden="true">
+            {Array.from({ length: 7 }, (_, index) => <PawPrint key={index} className="auth-drifting-paw" style={{ '--paw-x': `${[10, 66, 30, 74, 7, 54, 36][index]}%`, '--paw-y': `${[8, 17, 32, 48, 58, 70, 4][index]}%`, '--paw-delay': `${-index * 1.7}s`, '--paw-duration': `${8 + index % 4}s`, '--paw-size': `${46 + index % 3 * 16}px`, '--paw-angle': `${index % 2 ? 25 : -22}deg` }} />)}
           </div>
-          <div className="auth-visual-bottom">
-            <span>
-              <ShieldCheck size={16} /> เพื่อนคู่ใจในการดูแลน้องหมา
-            </span>
-            <span>
-              01 <i /> 02
-            </span>
-          </div>
+          <img className="auth-login-portrait" src="/dogs/login-dog-portrait.png" alt="สุนัขขาวดำมองกล้องอย่างใกล้ชิด" />
         </aside>
         <div className="auth-content">
           <div className="auth-rings" aria-hidden="true">
@@ -171,7 +130,7 @@ export default function Auth({ mode = "login" }) {
               <span>
                 <PawPrint size={29} />
               </span>
-              Pet Health <b>AI</b>
+              Doo Pet <b>× ML</b>
             </Link>
             <p className="auth-tagline">
               พื้นที่เล็ก ๆ เพื่อสุขภาพที่ดีของเพื่อนซี้
@@ -369,7 +328,7 @@ export default function Auth({ mode = "login" }) {
             </div> */}
           </div>
           <footer className="auth-footer">
-            <span>© {new Date().getFullYear()} Pet Health AI</span>
+            <span>© {new Date().getFullYear()} Doo Pet × Machine Learning</span>
             <span>
               <PawPrint size={12} /> Made for our best friends
             </span>
